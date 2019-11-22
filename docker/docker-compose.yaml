@@ -16,7 +16,7 @@
 # limitations under the License.
 ################################################################################
 
-version: "1.7"
+version: "2.1"
 services:
   jobmanager:
     image: flink:1.9-scala_2.11
