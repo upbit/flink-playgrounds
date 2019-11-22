@@ -46,7 +46,12 @@ object KafkaConsumer {
     consumer.setCommitOffsetsOnCheckpoints(true)
 
     val stream: DataStream[String] = env.addSource(consumer)
-    stream.print()
+    stream.flatMap{ _.toLowerCase().split("\\W+").filter{ _.nonEmpty}}
+      .map{(_,1)}
+      .keyBy(0)
+      .timeWindow(Time.seconds(5))
+      .sum(1)
+      .print()
 
     // execute program
     env.execute("KafkaConsumer")
