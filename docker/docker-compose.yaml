@@ -27,7 +27,6 @@ services:
       - ./flink:/opt/flink/conf
       - flink-checkpoint-directory:/tmp/flink-checkpoint-directory
       - /tmp/flink-savepoints-directory:/tmp/flink-savepoints-directory
-      - ../target:/opt/flink-target
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
   taskmanager:
