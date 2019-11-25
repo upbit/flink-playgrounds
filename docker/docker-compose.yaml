@@ -57,14 +57,6 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     ports:
       - 9094:9094
-  kafka-manager:
-    image: sheepkiller/kafka-manager
-    depends_on:
-      - kafka
-    environment:
-      ZK_HOSTS: zookeeper:2181
-    ports:
-      - 9000:9000
   generator:
     build: ./kafka-producer
     image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
