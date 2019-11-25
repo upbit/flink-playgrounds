@@ -24,9 +24,10 @@ services:
     ports:
       - 8081:8081
     volumes:
-      - ./conf:/opt/flink/conf
+      - ./flink:/opt/flink/conf
       - flink-checkpoint-directory:/tmp/flink-checkpoint-directory
       - /tmp/flink-savepoints-directory:/tmp/flink-savepoints-directory
+      - ../target:/opt/flink-target
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
   taskmanager:
@@ -35,23 +36,41 @@ services:
       - jobmanager
     command: "taskmanager.sh start-foreground"
     volumes:
-      - ./conf:/opt/flink/conf
+      - ./flink:/opt/flink/conf
       - flink-checkpoint-directory:/tmp/flink-checkpoint-directory
       - /tmp/flink-savepoints-directory:/tmp/flink-savepoints-directory
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
   zookeeper:
     image: wurstmeister/zookeeper:3.4.6
+    ports:
+      - 2181:2181
   kafka:
-    image: wurstmeister/kafka:2.12-2.2.1
+    image: wurstmeister/kafka:2.11-0.11.0.3
+    depends_on:
+      - zookeeper
     environment:
       KAFKA_ADVERTISED_LISTENERS: INSIDE://:9092,OUTSIDE://:9094
       KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
-      KAFKA_CREATE_TOPICS: "input:2:1, output:2:1"
+      KAFKA_CREATE_TOPICS: "stream_json:2:1, stream_pb2:2:1"
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     ports:
       - 9094:9094
+  kafka-manager:
+    image: sheepkiller/kafka-manager
+    depends_on:
+      - kafka
+    environment:
+      ZK_HOSTS: zookeeper:2181
+    ports:
+      - 9000:9000
+  generator:
+    build: ./kafka-producer
+    image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
+    command: "python /usr/src/app/producer_json.py kafka:9092"
+    depends_on:
+      - kafka
 volumes:
   flink-checkpoint-directory:

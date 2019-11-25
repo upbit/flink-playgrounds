@@ -137,7 +137,7 @@ under the License.
 							</filters>
 							<transformers>
 								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-									<mainClass>com.zzz.flink.clickcountjob.scala.StreamingJob</mainClass>
+									<mainClass>com.tencent.flink.KafkaConsumer</mainClass>
 								</transformer>
 							</transformers>
 						</configuration>
