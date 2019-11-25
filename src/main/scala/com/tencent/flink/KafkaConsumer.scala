@@ -29,7 +29,7 @@ object KafkaConsumer {
     env.enableCheckpointing(5000)
 
     val properties = new Properties()
-    val bootstrap_servers = parameter.get("bootstrap.servers", "zookeeper:2181")
+    val bootstrap_servers = parameter.get("bootstrap.servers", "kafka:9092")
     val group_id = parameter.get("group.id", "oceanus-playground")
 
     properties.setProperty("bootstrap.servers", bootstrap_servers)
