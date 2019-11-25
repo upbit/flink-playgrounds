@@ -1,13 +1,17 @@
 package com.tencent.flink
 
 import java.util.Properties
+
+import org.apache.flink.api.common.functions.FlatMapFunction
 import org.apache.flink.api.scala._
 import org.apache.flink.api.common.serialization.SimpleStringSchema
 import org.apache.flink.api.java.utils.ParameterTool
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
 import org.apache.flink.streaming.api.TimeCharacteristic
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer
+import org.apache.flink.util.Collector
 
 object KafkaConsumer {
   def main(args: Array[String]) {
@@ -47,8 +51,7 @@ object KafkaConsumer {
     System.out.println(f"Start consumer on $topic, bootstrap.servers='$bootstrap_servers', group.id='$group_id'")
 
     val stream: DataStream[String] = env.addSource(consumer)
-    stream.flatMap{ _.toLowerCase().split("\\W+").filter{ _.nonEmpty}}
-      .map{(_,1)}
+    stream.flatMap(new RandToFlatMap)
       .keyBy(0)
       .timeWindow(Time.seconds(5))
       .sum(1)
@@ -56,5 +59,30 @@ object KafkaConsumer {
 
     // execute program
     env.execute("KafkaConsumer")
+  }
+
+  /**
+   * Deserialize JSON from kafka
+   *
+   * Implements a string tokenizer that splits sentences into words as a
+   * user-defined FlatMapFunction.
+   */
+  private class RandToFlatMap extends FlatMapFunction[String, (String, Double)] {
+    lazy val jsonParser = new ObjectMapper()
+
+    override def flatMap(value: String, out: Collector[(String, Double)]): Unit = {
+      // deserialize JSON
+      val jsonNode = jsonParser.readValue(value, classOf[JsonNode])
+      val hasValue = jsonNode.has("value")
+
+      (hasValue, jsonNode) match {
+        case (true, node) => {
+          val flatKey = node.get("key").asText()
+          val flatValue = node.get("value").asDouble()
+          out.collect((flatKey, flatValue))
+        }
+        case _ =>
+      }
+    }
   }
 }

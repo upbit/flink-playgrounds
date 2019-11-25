@@ -53,14 +53,19 @@ services:
       KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
-      KAFKA_CREATE_TOPICS: "stream_json:2:1, stream_pb2:2:1"
+      KAFKA_CREATE_TOPICS: "stream_json:2:1, stream_protobuf:2:1"
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     ports:
       - 9094:9094
-  generator:
+  generator-json:
     build: ./kafka-producer
     image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
     command: "python /usr/src/app/producer_json.py kafka:9092"
+    depends_on:
+      - kafka
+  generator-pb:
+    image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
+    command: "python /usr/src/app/producer_protobuf.py kafka:9092"
     depends_on:
       - kafka
 volumes:

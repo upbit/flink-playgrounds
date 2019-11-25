@@ -6,5 +6,4 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -q -r requirements.txt
 
 COPY *.py ./
-
-# CMD [ "python", "./producer.py" ]
+COPY message_pb2.py ./

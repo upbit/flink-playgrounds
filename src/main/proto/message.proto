@@ -1,0 +1,10 @@
+syntax = "proto2";
+
+package playground;
+
+option java_package = "com.tencent.flink";
+
+message Message {
+    optional string key = 1;
+    optional string value = 2;
+}

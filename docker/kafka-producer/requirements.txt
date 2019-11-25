@@ -1,1 +1,2 @@
 kafka-python>=1.0
+protobuf>=3.6
