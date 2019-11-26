@@ -1,10 +1,11 @@
 package com.tencent.flink
 
+import java.io.IOException
 import java.util.Properties
 
-import org.apache.flink.api.common.functions.FlatMapFunction
 import org.apache.flink.api.scala._
-import org.apache.flink.api.common.serialization.SimpleStringSchema
+import org.apache.flink.api.common.functions.FlatMapFunction
+import org.apache.flink.api.common.serialization.{AbstractDeserializationSchema, SimpleStringSchema}
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
 import org.apache.flink.streaming.api.TimeCharacteristic
@@ -12,60 +13,68 @@ import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironm
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer
 import org.apache.flink.util.Collector
+import org.apache.kafka.clients.consumer.ConsumerConfig
+import com.tencent.flink.MessageOuterClass.Message
+
 
 object KafkaConsumer {
   def main(args: Array[String]) {
     val parameter = ParameterTool.fromArgs(args)
 
-    // topic
-    val topic: String = try {
-      parameter.getRequired("topic")
-    } catch {
-      case e: Exception => {
-        System.err.println("No topic specified. Please run 'KafkaConsumer --topic <topic>'")
-        return
-      }
-    }
-
-    // set up the streaming execution environment
+    // Set up the streaming execution environment
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
     env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime)
     env.enableCheckpointing(5000)
 
+    // Init kafka consumer
     val properties = new Properties()
     val bootstrap_servers = parameter.get("bootstrap.servers", "kafka:9092")
     val group_id = parameter.get("group.id", "oceanus-playground")
+    properties.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap_servers)
+    properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, group_id)
 
-    properties.setProperty("bootstrap.servers", bootstrap_servers)
-    properties.setProperty("group.id", group_id)
-
-    val consumer = new FlinkKafkaConsumer[String](topic, new SimpleStringSchema(), properties)
+    val json_consumer = new FlinkKafkaConsumer[String]("stream_json", new SimpleStringSchema(), properties)
+    val pb_consumer = new FlinkKafkaConsumer[Array[Byte]]("stream_protobuf",
+      new ByteArrayDeserializationSchema[Array[Byte]](), properties)
     // 方式一：从头开始消费，这种方式会导致重复消费
     // consumer.setStartFromEarliest()
     // 方式二：忽略kafka已有的消息，从最新的位置消费，该方式会导致有些消息没被消费
     // consumer.setStartFromLatest()
     // 方式三：指定时间往后消费,注意：时间不能>=当前时间
     // consumer.setStartFromTimestamp(System.currentTimeMillis()-1000*60*60)
-    consumer.setCommitOffsetsOnCheckpoints(true)
+    json_consumer.setCommitOffsetsOnCheckpoints(true)
+    pb_consumer.setCommitOffsetsOnCheckpoints(true)
 
-    System.out.println(f"Start consumer on $topic, bootstrap.servers='$bootstrap_servers', group.id='$group_id'")
+    System.out.println(f"Start consumers, bootstrap.servers='$bootstrap_servers', group.id='$group_id'")
 
-    val stream: DataStream[String] = env.addSource(consumer)
-    stream.flatMap(new RandToFlatMap)
-      .keyBy(0)
-      .timeWindow(Time.seconds(5))
-      .sum(1)
+//    val left: DataStream[(String, Double)] = env.addSource(json_consumer)
+//      .flatMap(new RandToFlatMap)
+
+    val right: DataStream[Array[Byte]] = env.addSource(pb_consumer)
+    right.map{ raw => Message.parseFrom(raw) }
       .print()
+
+//    left.join(right)
+//      .where(_.key)
+//      .equalTo(_.key)
+//      .timeWindow(Time.seconds(5))
+//      .print()
+//      .apply { (g, s) => Person(g.name, g.grade, s.salary) }
 
     // execute program
     env.execute("KafkaConsumer")
   }
 
   /**
+   * Deserialize Array[Byte] from kafka (like protobuf)
+   */
+  class ByteArrayDeserializationSchema[T] extends AbstractDeserializationSchema[Array[Byte]]{
+    @throws[IOException]
+    override def deserialize(message: Array[Byte]): Array[Byte] = message
+  }
+
+  /**
    * Deserialize JSON from kafka
-   *
-   * Implements a string tokenizer that splits sentences into words as a
-   * user-defined FlatMapFunction.
    */
   private class RandToFlatMap extends FlatMapFunction[String, (String, Double)] {
     lazy val jsonParser = new ObjectMapper()

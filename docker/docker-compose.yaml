@@ -60,6 +60,9 @@ services:
   generator-json:
     build: ./kafka-producer
     image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
+    environment: # proxy for OfficeWifi
+      HTTP_PROXY: http://127.0.0.1:12639
+      HTTPS_PROXY: http://127.0.0.1:12639
     command: "python /usr/src/app/producer_json.py kafka:9092"
     depends_on:
       - kafka
