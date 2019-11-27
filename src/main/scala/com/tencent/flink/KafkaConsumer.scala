@@ -15,6 +15,9 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer
 import org.apache.flink.util.Collector
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import com.tencent.flink.MessageOuterClass.Message
+import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction
+import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows
 
 
 object KafkaConsumer {
@@ -23,7 +26,7 @@ object KafkaConsumer {
 
     // Set up the streaming execution environment
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime)
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
     env.enableCheckpointing(5000)
 
     // Init kafka consumer
@@ -47,19 +50,30 @@ object KafkaConsumer {
 
     System.out.println(f"Start consumers, bootstrap.servers='$bootstrap_servers', group.id='$group_id'")
 
-//    val left: DataStream[(String, Double)] = env.addSource(json_consumer)
-//      .flatMap(new RandToFlatMap)
+    val timeExtractor: BoundedOutOfOrdernessTimestampExtractor[(String, String, Int)] =
+      new BoundedOutOfOrdernessTimestampExtractor[(String, String, Int)](Time.milliseconds(10000)) {
+      override def extractTimestamp(element: (String, String, Int)): Long = element._3
+    }
 
-    val right: DataStream[Array[Byte]] = env.addSource(pb_consumer)
-    right.map{ raw => Message.parseFrom(raw) }
-      .print()
+    val left: DataStream[(String, String, Int)] = env.addSource(json_consumer)
+      .flatMap(new JsonToFlatMap)
+      .assignTimestampsAndWatermarks(timeExtractor)
 
-//    left.join(right)
-//      .where(_.key)
-//      .equalTo(_.key)
-//      .timeWindow(Time.seconds(5))
-//      .print()
-//      .apply { (g, s) => Person(g.name, g.grade, s.salary) }
+    val right: DataStream[(String, String, Int)] = env.addSource(pb_consumer)
+      .flatMap(new ProtoMessageToFlatMap)
+      .assignTimestampsAndWatermarks(timeExtractor)
+
+    val res: DataStream[String] = left.keyBy(_._1).intervalJoin(right.keyBy(_._1))
+      .between(Time.milliseconds(-60000), Time.milliseconds(60000))
+      .process(new ProcessJoinFunction[(String, String, Int), (String, String, Int), String] {
+        override def processElement(left: (String, String, Int), right: (String, String, Int),
+                                    ctx: ProcessJoinFunction[(String, String, Int), (String, String, Int),
+                                      String]#Context, out: Collector[String]): Unit = {
+          out.collect("Joined> " + left._1 + ": " + left._2 + "-" + right._2)
+        }
+      })
+
+    res.print()
 
     // execute program
     env.execute("KafkaConsumer")
@@ -68,27 +82,44 @@ object KafkaConsumer {
   /**
    * Deserialize Array[Byte] from kafka (like protobuf)
    */
-  class ByteArrayDeserializationSchema[T] extends AbstractDeserializationSchema[Array[Byte]]{
+  private class ByteArrayDeserializationSchema[T] extends AbstractDeserializationSchema[Array[Byte]]{
     @throws[IOException]
     override def deserialize(message: Array[Byte]): Array[Byte] = message
+  }
+
+  private class ProtoMessageToFlatMap extends FlatMapFunction[Array[Byte], (String, String, Int)] {
+
+    override def flatMap(value: Array[Byte], out: Collector[(String, String, Int)]): Unit = {
+      // deserialize Protobuf
+      val msg = Message.parseFrom(value)
+
+      (msg.hasKey(), msg.hasTimestamp(), msg) match {
+        case (true, true, elem) => {
+          out.collect((elem.getKey(), elem.getValue(), elem.getTimestamp()))
+        }
+        case _ =>
+      }
+    }
   }
 
   /**
    * Deserialize JSON from kafka
    */
-  private class RandToFlatMap extends FlatMapFunction[String, (String, Double)] {
+  private class JsonToFlatMap extends FlatMapFunction[String, (String, String, Int)] {
     lazy val jsonParser = new ObjectMapper()
 
-    override def flatMap(value: String, out: Collector[(String, Double)]): Unit = {
+    override def flatMap(value: String, out: Collector[(String, String, Int)]): Unit = {
       // deserialize JSON
       val jsonNode = jsonParser.readValue(value, classOf[JsonNode])
-      val hasValue = jsonNode.has("value")
+      val hasTimestamp = jsonNode.has("timestamp")
 
-      (hasValue, jsonNode) match {
+      (hasTimestamp, jsonNode) match {
         case (true, node) => {
-          val flatKey = node.get("key").asText()
-          val flatValue = node.get("value").asDouble()
-          out.collect((flatKey, flatValue))
+          out.collect((
+            node.get("key").asText(),
+            node.get("value").asText(),
+            node.get("timestamp").asInt()
+          ))
         }
         case _ =>
       }
