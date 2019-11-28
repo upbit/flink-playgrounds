@@ -16,9 +16,12 @@ import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.util.Collector
+import org.slf4j.LoggerFactory
 
 
 object KafkaConsumer {
+  private val LOG = LoggerFactory.getLogger(KafkaConsumer.getClass)
+
   def main(args: Array[String]) {
     val parameter = ParameterTool.fromArgs(args)
 
@@ -56,25 +59,29 @@ object KafkaConsumer {
       .assignTimestampsAndWatermarks(new MessageTimeAssigner)
       .keyBy(_.key)
 
-//    left.print()
-//    right.print()
-
+    // intervalJoin
     val res: DataStream[String] = left.intervalJoin(right)
       .between(Time.milliseconds(-1000), Time.milliseconds(1000))
       .process(new ProcessJoinFunction[CustomMessage, CustomMessage, String] {
         override def processElement(left: CustomMessage, right: CustomMessage,
                                     ctx: ProcessJoinFunction[CustomMessage, CustomMessage, String]#Context,
                                     out: Collector[String]): Unit = {
+          // print log in taskmanager
+          LOG.info(f"[${left.timestamp}] Process(${left.key}, ${right.key}), values=(${left.value}, ${right.value})")
           out.collect("Joined> " + left.key + ": " + left.value + "-" + right.value)
         }
       })
 
+    // print in STDOUT (docker logs)
     res.print()
 
     // execute program
     env.execute("KafkaConsumer")
   }
 
+  /**
+   * Deserialization CustomMessage from kafka
+   */
   case class CustomMessage(key: String, value: String, timestamp: Int)
 
   // Protobuf -> CustomMessage
@@ -82,7 +89,7 @@ object KafkaConsumer {
 
     override def deserialize(bytes: Array[Byte]): CustomMessage = {
       val elem = Message.parseFrom(bytes)
-      CustomMessage(elem.getKey(), elem.getValue(), elem.getTimestamp())
+      CustomMessage(elem.getKey, elem.getValue, elem.getTimestamp)
     }
 
     override def isEndOfStream(nextElement: CustomMessage): Boolean = false
