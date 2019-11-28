@@ -60,7 +60,7 @@ object KafkaConsumer {
 //    right.print()
 
     val res: DataStream[String] = left.intervalJoin(right)
-      .between(Time.milliseconds(-5000), Time.milliseconds(5000))
+      .between(Time.milliseconds(-1000), Time.milliseconds(1000))
       .process(new ProcessJoinFunction[CustomMessage, CustomMessage, String] {
         override def processElement(left: CustomMessage, right: CustomMessage,
                                     ctx: ProcessJoinFunction[CustomMessage, CustomMessage, String]#Context,
@@ -107,7 +107,7 @@ object KafkaConsumer {
    */
   class MessageTimeAssigner
     extends BoundedOutOfOrdernessTimestampExtractor[CustomMessage](Time.seconds(5)) {
-    override def extractTimestamp(r: CustomMessage): Long = r.timestamp
+    override def extractTimestamp(r: CustomMessage): Long = r.timestamp * 1000
   }
 
 }
