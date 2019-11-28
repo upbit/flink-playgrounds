@@ -38,7 +38,11 @@ def main():
     while True:
         try:
             key = rand.RandString()
-            value = {"key": key, "value": "val[%s]" % key[:6], "timestamp": int(time.time())}
+            value = {
+                "key": key,
+                "value": "val[%s]" % key[:6],
+                "timestamp": int(time.time() * 1000),
+            }
             future = producer.send(topic_name, value)
             result = future.get(timeout=10)
             print(result)

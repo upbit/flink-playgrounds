@@ -41,7 +41,7 @@ def main():
             msg = message_pb2.Message()
             msg.key = key
             msg.value = "val#%s" % key[6:]
-            msg.timestamp = int(time.time())
+            msg.timestamp = int(time.time() * 1000)
 
             future = producer.send(topic_name, msg)
             result = future.get(timeout=10)

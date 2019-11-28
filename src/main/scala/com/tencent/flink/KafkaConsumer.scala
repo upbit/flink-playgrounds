@@ -7,7 +7,7 @@ import org.apache.flink.api.common.serialization.DeserializationSchema
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
 import org.apache.flink.streaming.api.TimeCharacteristic
-import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
+import org.apache.flink.streaming.api.scala.{DataStream, KeyedStream, StreamExecutionEnvironment}
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer
 import org.apache.kafka.clients.consumer.ConsumerConfig
@@ -49,28 +49,19 @@ object KafkaConsumer {
     json_consumer.setCommitOffsetsOnCheckpoints(true)
     pb_consumer.setCommitOffsetsOnCheckpoints(true)
 
-    System.out.println(f"Start consumers, bootstrap.servers='$bootstrap_servers', group.id='$group_id'")
+    LOG.info(f"Start consumers, bootstrap.servers='$bootstrap_servers', group.id='$group_id'")
 
     val left = env.addSource(json_consumer)
       .assignTimestampsAndWatermarks(new MessageTimeAssigner)
-      .keyBy(_.key)
-
+      .keyBy(elem => elem.key)
     val right = env.addSource(pb_consumer)
       .assignTimestampsAndWatermarks(new MessageTimeAssigner)
-      .keyBy(_.key)
+      .keyBy(elem => elem.key)
 
     // intervalJoin
     val res: DataStream[String] = left.intervalJoin(right)
       .between(Time.milliseconds(-1000), Time.milliseconds(1000))
-      .process(new ProcessJoinFunction[CustomMessage, CustomMessage, String] {
-        override def processElement(left: CustomMessage, right: CustomMessage,
-                                    ctx: ProcessJoinFunction[CustomMessage, CustomMessage, String]#Context,
-                                    out: Collector[String]): Unit = {
-          // print log in taskmanager
-          LOG.info(f"[${left.timestamp}] Process(${left.key}, ${right.key}), values=(${left.value}, ${right.value})")
-          out.collect("Joined> " + left.key + ": " + left.value + "-" + right.value)
-        }
-      })
+      .process(new CombineJoinFunction)
 
     // print in STDOUT (docker logs)
     res.print()
@@ -112,9 +103,21 @@ object KafkaConsumer {
    * Assigns timestamps to RawMessage based on internal timestamp and
    * emits watermarks with five seconds slack.
    */
-  class MessageTimeAssigner
+  private class MessageTimeAssigner
     extends BoundedOutOfOrdernessTimestampExtractor[CustomMessage](Time.seconds(5)) {
-    override def extractTimestamp(r: CustomMessage): Long = r.timestamp * 1000
+    override def extractTimestamp(r: CustomMessage): Long = r.timestamp
+  }
+
+  private class CombineJoinFunction
+    extends ProcessJoinFunction[CustomMessage, CustomMessage, String] {
+
+    override def processElement(left: CustomMessage, right: CustomMessage,
+                                ctx: ProcessJoinFunction[CustomMessage, CustomMessage, String]#Context,
+                                out: Collector[String]): Unit = {
+      // print log in taskmanager
+      LOG.info(f"[${left.timestamp}] Process(${left.key}, ${right.key}), values=(${left.value}, ${right.value})")
+      out.collect("Joined> " + left.key + ": " + left.value + "-" + right.value)
+    }
   }
 
 }
