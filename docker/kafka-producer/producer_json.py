@@ -1,24 +1,24 @@
 import sys
 import json
 import time
+import random
 from kafka import KafkaProducer
 
 
 class PseudoRandom(object):
     "Generate pseudo-random string with same seed"
 
-    def __init__(self, seed=int(time.time()), chars='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'):
+    def __init__(self, seed=int(time.time()), chars='123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'):
         self.stage = seed
         self.chars = chars
 
-    def choice(self, stage, update=True):
-        index = (stage * 33) % len(self.chars)
-        if update:
-            self.stage = (stage + index) % 2220301
+    def choice(self, chars):
+        self.stage = (8121 * self.stage + 28411) % 134456
+        index = self.stage % len(self.chars)
         return self.chars[index]
 
     def RandString(self, length=12):
-        return ''.join(self.choice(self.stage) for _ in range(length))
+        return ''.join(self.choice(self.chars) for _ in range(length))
 
 
 def main():
@@ -37,15 +37,22 @@ def main():
 
     while True:
         try:
-            key = rand.RandString()
-            value = {
-                "key": key,
-                "value": "val[%s]" % key[:6],
-                "timestamp": int(time.time() * 1000),
-            }
-            future = producer.send(topic_name, value)
-            result = future.get(timeout=10)
-            print(result)
+            # Gen keys and shuffle send
+            array = []
+            for i in range(3):
+                key = rand.RandString()
+                msg = {
+                    "key": key,
+                    "value": "val[%s]" % key[:6],
+                    "ms_time": int(time.time() * 1000),
+                }
+                array.append(msg)
+            random.shuffle(array)
+
+            for msg in array:
+                future = producer.send(topic_name, msg)
+                result = future.get(timeout=10)
+                print(result)
             time.sleep(1.0)
 
         except Exception as e:

@@ -5,7 +5,7 @@ package playground;
 option java_package = "com.tencent.flink";
 
 message Message {
-    optional string key         = 1;
-    optional string value       = 2;
-    optional int32  timestamp   = 9;
+    optional string key     = 1;
+    optional string value   = 2;
+    optional int64  ms_time = 9;
 }

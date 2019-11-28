@@ -53,15 +53,19 @@ object KafkaConsumer {
 
     val left = env.addSource(json_consumer)
       .assignTimestampsAndWatermarks(new MessageTimeAssigner)
+      .name("JSON")
       .keyBy(elem => elem.key)
+
     val right = env.addSource(pb_consumer)
       .assignTimestampsAndWatermarks(new MessageTimeAssigner)
+      .name("Protobuf")
       .keyBy(elem => elem.key)
 
     // intervalJoin
     val res: DataStream[String] = left.intervalJoin(right)
-      .between(Time.milliseconds(-1000), Time.milliseconds(1000))
+      .between(Time.milliseconds(-3000), Time.milliseconds(3000))
       .process(new CombineJoinFunction)
+      .name("intervalJoin")
 
     // print in STDOUT (docker logs)
     res.print()
@@ -73,26 +77,28 @@ object KafkaConsumer {
   /**
    * Deserialization CustomMessage from kafka
    */
-  case class CustomMessage(key: String, value: String, timestamp: Int)
+  case class CustomMessage(key: String, value: String, eventTime: Long)
 
-  // Protobuf -> CustomMessage
-  private class ProtobufMessageDeSchema extends DeserializationSchema[CustomMessage] {
-
-    override def deserialize(bytes: Array[Byte]): CustomMessage = {
-      val elem = Message.parseFrom(bytes)
-      CustomMessage(elem.getKey, elem.getValue, elem.getTimestamp)
-    }
-
-    override def isEndOfStream(nextElement: CustomMessage): Boolean = false
-    override def getProducedType: TypeInformation[CustomMessage] = createTypeInformation[CustomMessage]
-  }
   // JSON -> CustomMessage
   private class JSONMessageDeSchema extends DeserializationSchema[CustomMessage] {
     lazy val jsonParser = new ObjectMapper()
 
     override def deserialize(bytes: Array[Byte]): CustomMessage = {
       val elem = jsonParser.readValue(bytes, classOf[JsonNode])
-      CustomMessage(elem.get("key").asText(), elem.get("value").asText(), elem.get("timestamp").asInt())
+      LOG.debug(f"JSON[${elem.get("ms_time").asLong}] key=${elem.get("key").asText} val=${elem.get("value").asText}")
+      CustomMessage(elem.get("key").asText, elem.get("value").asText, elem.get("ms_time").asLong)
+    }
+
+    override def isEndOfStream(nextElement: CustomMessage): Boolean = false
+    override def getProducedType: TypeInformation[CustomMessage] = createTypeInformation[CustomMessage]
+  }
+  // Protobuf -> CustomMessage
+  private class ProtobufMessageDeSchema extends DeserializationSchema[CustomMessage] {
+
+    override def deserialize(bytes: Array[Byte]): CustomMessage = {
+      val elem = Message.parseFrom(bytes)
+      LOG.debug(f"Protobuf[${elem.getMsTime}] key=${elem.getKey} val=${elem.getValue}")
+      CustomMessage(elem.getKey, elem.getValue, elem.getMsTime)
     }
 
     override def isEndOfStream(nextElement: CustomMessage): Boolean = false
@@ -105,7 +111,7 @@ object KafkaConsumer {
    */
   private class MessageTimeAssigner
     extends BoundedOutOfOrdernessTimestampExtractor[CustomMessage](Time.seconds(5)) {
-    override def extractTimestamp(r: CustomMessage): Long = r.timestamp
+    override def extractTimestamp(r: CustomMessage): Long = r.eventTime
   }
 
   private class CombineJoinFunction
@@ -115,7 +121,7 @@ object KafkaConsumer {
                                 ctx: ProcessJoinFunction[CustomMessage, CustomMessage, String]#Context,
                                 out: Collector[String]): Unit = {
       // print log in taskmanager
-      LOG.info(f"[${left.timestamp}] Process(${left.key}, ${right.key}), values=(${left.value}, ${right.value})")
+      LOG.info(f"[${left.eventTime}] Join left=${left.key} right=${right.key}), values=(${left.value}, ${right.value})")
       out.collect("Joined> " + left.key + ": " + left.value + "-" + right.value)
     }
   }

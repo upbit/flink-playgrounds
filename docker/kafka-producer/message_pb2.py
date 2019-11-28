@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   package='playground',
   syntax='proto2',
   serialized_options=_b('\n\021com.tencent.flink'),
-  serialized_pb=_b('\n\rmessage.proto\x12\nplayground\"8\n\x07Message\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x11\n\ttimestamp\x18\t \x01(\x05\x42\x13\n\x11\x63om.tencent.flink')
+  serialized_pb=_b('\n\rmessage.proto\x12\nplayground\"6\n\x07Message\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x0f\n\x07ms_time\x18\t \x01(\x03\x42\x13\n\x11\x63om.tencent.flink')
 )
 
 
@@ -48,8 +48,8 @@ _MESSAGE = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='timestamp', full_name='playground.Message.timestamp', index=2,
-      number=9, type=5, cpp_type=1, label=1,
+      name='ms_time', full_name='playground.Message.ms_time', index=2,
+      number=9, type=3, cpp_type=2, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -67,7 +67,7 @@ _MESSAGE = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=29,
-  serialized_end=85,
+  serialized_end=83,
 )
 
 DESCRIPTOR.message_types_by_name['Message'] = _MESSAGE
