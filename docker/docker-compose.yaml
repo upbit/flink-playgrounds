@@ -16,8 +16,10 @@
 # limitations under the License.
 ################################################################################
 
-version: "2.1"
+version: "2"
+
 services:
+  # flink
   jobmanager:
     image: flink:1.9-scala_2.11
     command: "jobmanager.sh start-foreground"
@@ -42,6 +44,8 @@ services:
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
       - FLINK_ENV_JAVA_OPTS=-Dlog.file=/opt/flink/log/taskmanager.log
+
+  # kafka & zk
   zookeeper:
     image: wurstmeister/zookeeper:3.4.6
     ports:
@@ -55,23 +59,34 @@ services:
       KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
-      KAFKA_CREATE_TOPICS: "stream_json:2:1, stream_protobuf:2:1"
+      KAFKA_CREATE_TOPICS: "stream1:2:1, stream2:2:1"
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     ports:
       - 9094:9094
-  generator-json:
+  # kafka-manager:
+  #   image: sheepkiller/kafka-manager
+  #   depends_on:
+  #     - kafka
+  #   environment:
+  #     ZK_HOSTS: zookeeper:2181
+  #   ports:
+  #     - 9000:9000
+
+  # generator
+  generator1:
     build: ./kafka-producer
-    image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
-    environment: # proxy for OfficeWifi
+    image: upbit/kafka-producer
+    environment:
       HTTP_PROXY: http://127.0.0.1:12639
       HTTPS_PROXY: http://127.0.0.1:12639
-    command: "python /usr/src/app/producer_json.py kafka:9092"
+    command: "python /usr/src/app/producer_random.py stream1 --size=100 --skip_ratio=0.01 --random_int"
     depends_on:
       - kafka
-  generator-pb:
-    image: upbit/kafka-producer:1-FLINK-1.9-scala_2.11
-    command: "python /usr/src/app/producer_protobuf.py kafka:9092"
+  generator2:
+    image: upbit/kafka-producer
+    command: "python /usr/src/app/producer_random.py stream2 --size=1000 --skip_ratio=0.001 --random_float"
     depends_on:
       - kafka
+
 volumes:
   flink-checkpoint-directory:
